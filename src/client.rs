@@ -2,7 +2,7 @@ use std::io::Read;
 
 use tokio::net::TcpStream;
 
-use crate::common::{send_message, wait_for_message, MessageType, NetworkMessage};
+use crate::common::{send_message, wait_for_server_message, MessageType, NetworkMessage};
 
 pub async fn run(ip: &str, port: &str) {
     // let stdin = io::stdin();
@@ -23,7 +23,7 @@ pub async fn run(ip: &str, port: &str) {
     .unwrap();
 
     loop {
-        let new_message:NetworkMessage = wait_for_message(&mut stream, &mut read_buf).await;
+        let new_message:NetworkMessage = wait_for_server_message(&mut stream, &mut read_buf).await;
 
         if new_message.text != last_message.text {
             last_message = new_message;
