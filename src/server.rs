@@ -2,9 +2,8 @@ use std::io::ErrorKind;
 
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::common::{
-    send_message, wait_for_client_message, Connection, MessageType, NetworkMessage, Room,
-};
+use crate::common::{send_message, wait_for_client_message, Connection, Room};
+use crate::network_message::{MessageType, NetworkMessage};
 use crate::request;
 
 static mut room_list: Vec<Room> = vec![];

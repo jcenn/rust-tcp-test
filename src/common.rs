@@ -6,31 +6,9 @@ use tokio::{
     net::TcpStream,
 };
 
+use crate::network_message::NetworkMessage;
+
 static mut last_id: i32 = 0;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct NetworkMessage {
-    pub text: String,
-    pub message_type: MessageType,
-}
-
-impl NetworkMessage {
-    pub fn new(message: String, message_type: MessageType) -> Self {
-        Self {
-            text: message,
-            message_type: message_type,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub enum MessageType {
-    JoinRoomRequest,
-    JoinRoomResponse,
-    RoomListRequest,
-    RoomListResponse,
-    Other,
-}
 
 pub async fn send_message(message: &NetworkMessage, stream: &mut TcpStream) -> Result<(), ()> {
     let json: String = serde_json::to_string(message).unwrap();
@@ -44,7 +22,10 @@ pub async fn send_message(message: &NetworkMessage, stream: &mut TcpStream) -> R
     }
 }
 
-pub async fn wait_for_server_message(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> NetworkMessage {
+pub async fn wait_for_server_message(
+    stream: &mut TcpStream,
+    buffer: &mut Vec<u8>,
+) -> NetworkMessage {
     let n = stream
         .read(buffer)
         .await
@@ -84,7 +65,6 @@ pub async fn wait_for_client_message(
     let json = std::str::from_utf8(buffer).unwrap().replace('\0', "");
     let message = serde_json::from_str::<NetworkMessage>(json.as_str())
         .expect("error while trying to parse incoming data");
-    // println!("received {:#?} from id: {}", message, connection.id);
     return Ok(message);
 }
 
@@ -93,6 +73,7 @@ pub struct Room {
     pub room_id: i32,
     pub connections: Vec<Connection>,
 }
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Connection {
     pub ip: IpAddr,

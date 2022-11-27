@@ -2,8 +2,10 @@ use std::io::{BufReader, Read};
 
 use tokio::{io, net::TcpStream};
 
-use crate::common::{send_message, wait_for_server_message, MessageType, NetworkMessage, Room};
-use crate::request::{JoinRoomRequest, self};
+use crate::common::{send_message, wait_for_server_message, Room};
+use crate::network_message::{MessageType, NetworkMessage};
+use crate::request::{self, JoinRoomRequest};
+
 pub async fn run(ip: &str, port: &str) {
     let mut user_input_buf: String = String::new();
     let stdin = std::io::stdin();
@@ -31,20 +33,16 @@ pub async fn run(ip: &str, port: &str) {
     // .await
     // .unwrap();
 
-    let message = NetworkMessage::new(serde_json::to_string(&JoinRoomRequest{room_id:42}).unwrap(), MessageType::JoinRoomRequest);
-    send_message(
-        &message,
-        &mut stream,
-    )
-    .await
-    .unwrap();
+    let message = NetworkMessage::new(
+        serde_json::to_string(&JoinRoomRequest { room_id: 42 }).unwrap(),
+        MessageType::JoinRoomRequest,
+    );
+    send_message(&message, &mut stream).await.unwrap();
 
     loop {
         let new_message: NetworkMessage = wait_for_server_message(&mut stream, &mut read_buf).await;
-
+        println!("new message: {:?}", new_message);
         if new_message.text != last_message.text {
-            // println!("new message: {:?}", new_message.text);
-
             println!("what would you like to do? {{ 1 - show rooms, 2 - create a new room }}");
             stdin.read_line(&mut user_input_buf).unwrap();
 
@@ -60,7 +58,13 @@ pub async fn run(ip: &str, port: &str) {
 }
 
 async fn get_rooms(stream: &mut TcpStream, read_buf: &mut Vec<u8>) -> Vec<Room> {
-    let message = NetworkMessage::new(serde_json::to_string(&request::RoomListRequest{}).unwrap().trim().to_string(), MessageType::RoomListRequest);
+    let message = NetworkMessage::new(
+        serde_json::to_string(&request::RoomListRequest {})
+            .unwrap()
+            .trim()
+            .to_string(),
+        MessageType::RoomListRequest,
+    );
     send_message(&message, stream).await.unwrap();
     let response = wait_for_server_message(stream, read_buf).await;
     let json = response.text;
@@ -69,11 +73,20 @@ async fn get_rooms(stream: &mut TcpStream, read_buf: &mut Vec<u8>) -> Vec<Room> 
     return data;
 }
 
+async fn handle_incoming_message(stream: &mut TcpStream, message: &NetworkMessage) {
+    match message.message_type {
+        MessageType::JoinRoomResponse => todo!(),
+        MessageType::RoomListResponse => todo!(),
+        MessageType::Other => todo!(),
+        MessageType::JoinRoomRequest => todo!(),
+        MessageType::RoomListRequest => todo!(),
+    }
+}
+
 async fn connect_to_room(
     stream: &mut TcpStream,
     read_buf: &mut Vec<u8>,
     id: i32,
 ) -> Result<(), ()> {
-
     return Ok(());
 }

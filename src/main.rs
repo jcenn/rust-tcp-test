@@ -10,6 +10,7 @@ mod server;
 mod common;
 mod request;
 mod response;
+mod network_message;
 
 static IP_ADDRESS: &str = "127.0.0.1";
 static PORT: &str = "3333";
