@@ -3,6 +3,7 @@
 
 
 ### todo:
+- [ ] move contents of common.rs to separate files
 - [ ] tests
 - [ ] showing a list of current games
 - [ ] starting a new game

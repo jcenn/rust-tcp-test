@@ -21,5 +21,8 @@ pub enum MessageType {
     JoinRoomResponse,
     RoomListRequest,
     RoomListResponse,
+    CreateRoomRequest,
+    CreateRoomResponse,
+    Error,
     Other,
 }

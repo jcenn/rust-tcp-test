@@ -1,16 +1,12 @@
-use std::{
-    env,
-    io::{stdin, Read, Write},
-    net::{TcpListener, TcpStream},
-    str::from_utf8,
-    thread,
-};
+use std::env;
 mod client;
-mod server;
 mod common;
+mod network_message;
 mod request;
 mod response;
-mod network_message;
+mod server;
+mod connection;
+mod room;
 
 static IP_ADDRESS: &str = "127.0.0.1";
 static PORT: &str = "3333";
