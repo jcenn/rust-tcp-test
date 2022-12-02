@@ -58,11 +58,9 @@ pub async fn run(ip: &str, port: &str) {
     }
 }
 
-//TODO:
 async fn handle_incoming_message(_stream: &mut TcpStream, message: &NetworkMessage) {
     match message.message_type {
         MessageType::UserJoinedResponse(data) => unsafe { USER_ID = data.user_id },
-        MessageType::JoinRoomResponse => todo!(),
         MessageType::RoomListResponse => {
             let response = message.clone();
             let json = &response.text;
@@ -76,15 +74,14 @@ async fn handle_incoming_message(_stream: &mut TcpStream, message: &NetworkMessa
         MessageType::CreateRoomResponse => {
             println!("successfully created a new room");
         }
-        MessageType::Other => {
-            println!("message: {:#?}", message.text);
-        }
-        MessageType::JoinRoomRequest => todo!(),
-        MessageType::RoomListRequest => todo!(),
-        MessageType::CreateRoomRequest => todo!(),
+        MessageType::JoinRoomResponse => todo!(),
         MessageType::Error(error) => match error {
             NetworkError::RoomWithIdAlreadyExists => println!("you already created a room"),
         },
+        MessageType::Other => {
+            println!("other message: {:#?}", message.text);
+        }
+        _ => (),
     };
 }
 
@@ -109,14 +106,6 @@ async fn join_room(_stream: &mut TcpStream) -> Result<(), ()> {
     println!("joined room {}", tmp_buf);
     return Err(());
 }
-//TODO:
-// async fn connect_to_room(
-//     stream: &mut TcpStream,
-//     read_buf: &mut Vec<u8>,
-//     id: i32,
-// ) -> Result<(), ()> {
-//     return Ok(());
-// }
 
 async fn wait_for_server_message(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> NetworkMessage {
     common::clear_buffer(buffer);
@@ -125,7 +114,6 @@ async fn wait_for_server_message(stream: &mut TcpStream, buffer: &mut Vec<u8>) -
         .await
         .expect("failed to read data from socket");
     let json = std::str::from_utf8(buffer).unwrap().replace('\0', "");
-    // println!("j: {:#?}", json);
     let message = serde_json::from_str::<NetworkMessage>(json.as_str())
         .expect("error while trying to parse incoming data");
     return message;

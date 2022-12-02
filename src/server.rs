@@ -143,7 +143,6 @@ async fn handle_new_message(
                 )
             }
         }
-
         MessageType::Other => {
             if message.text == "hello there".to_string() {
                 send_message(
