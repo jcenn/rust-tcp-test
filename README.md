@@ -11,3 +11,4 @@
 - [ ] joining with a username
 - [ ] game logic
 - [ ] documentation
+- [ ] game chat (preferably on separate thread for working simultaneously with the game)
