@@ -17,12 +17,23 @@ impl NetworkMessage {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum MessageType {
+    UserJoinedResponse(UserJoinedResponseDto),
     JoinRoomRequest,
     JoinRoomResponse,
     RoomListRequest,
     RoomListResponse,
     CreateRoomRequest,
     CreateRoomResponse,
-    Error,
+    Error(NetworkError),
     Other,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct UserJoinedResponseDto {
+    pub user_id: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum NetworkError {
+    RoomWithIdAlreadyExists,
 }
