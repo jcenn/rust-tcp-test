@@ -1,7 +1,7 @@
 # rust-tcp-test
-## over-the-network tic-tac-toe app using the TCP protocol in rust
+## over-the-network tic-tac-toe app using the TCP protocol written in rust
 
-### made mainly to learn rust
+<!-- ### made mainly to learn rust -->
 
 ### todo:
 - [ ] move contents of common.rs to separate files
