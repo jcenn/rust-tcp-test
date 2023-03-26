@@ -1,3 +1,4 @@
+use serde_derive::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 use crate::network_message::NetworkMessage;
@@ -16,4 +17,10 @@ pub fn clear_buffer(buffer: &mut Vec<u8>) {
     for i in 0..buffer.len() {
         buffer[i] = 0 as u8;
     }
+}
+#[derive(Debug, Serialize,Deserialize, PartialEq, Eq, Clone)]
+pub enum MoveType {
+    Rock,
+    Paper,
+    Scissors,
 }

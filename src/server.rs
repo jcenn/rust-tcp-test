@@ -5,21 +5,33 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::common::{self, send_message};
 use crate::network_message::{MessageType, NetworkMessage, UserJoinedResponseDto};
-use crate::request;
 use crate::room::Room;
+use crate::{
+    common::{self, send_message},
+    room::RoomUser,
+};
 use crate::{connection::Connection, network_message::NetworkError};
 
+#[derive(PartialEq, Eq, Clone)]
+struct QueueMessage {
+    receiver_id: i32,
+    message: NetworkMessage,
+}
+
 static mut ROOM_LIST: Vec<Room> = vec![];
+static mut MESSAGE_QUEUE: Vec<QueueMessage> = vec![];
 
 pub async fn run(ip: &str, port: &str) {
-    unsafe {
-        ROOM_LIST.push(Room {
-            connections: vec![],
-            room_id: 42,
-        });
-    }
+    //for testing
+    // unsafe {
+    //     ROOM_LIST.push(Room {
+    //         connections: vec![],
+    //         room_id: 42,
+    //         players: vec![]
+    //     });
+    // }
+
     let listener = TcpListener::bind(format!("{}:{}", ip, port)).await.unwrap();
     println!("running as server on {}:{}", ip, port);
 
@@ -30,7 +42,7 @@ pub async fn run(ip: &str, port: &str) {
         send_message(
             NetworkMessage::new(
                 format!("your id: {}", new_connection.id),
-                MessageType::UserJoinedResponse(UserJoinedResponseDto {
+                MessageType::UserConnectedResponse(UserJoinedResponseDto {
                     user_id: new_connection.id,
                 }),
             ),
@@ -45,6 +57,27 @@ pub async fn run(ip: &str, port: &str) {
 
             // In a loop, read data from the socket and write the data back.
             loop {
+                unsafe {
+                    let messages = MESSAGE_QUEUE
+                        .iter()
+                        .filter(|m| m.receiver_id == current_connection.id)
+                        .collect::<Vec<&QueueMessage>>();
+                    //TODO: es ist nicht working
+                    if messages.len() > 0 {
+                        send_message(messages[0].message.clone(), &mut stream).await;
+                        let mut found_message_index: i32 = -1;
+                        for i in 0..MESSAGE_QUEUE.len() {
+                            if MESSAGE_QUEUE[i] == messages[0].clone() {
+                                found_message_index = i as i32;
+                                break;
+                            }
+                        }
+                        if found_message_index == -1 {
+                            panic!("o no")
+                        }
+                        MESSAGE_QUEUE.remove(found_message_index as usize);
+                    }
+                }
                 let new_received = match wait_for_client_message(
                     &mut stream,
                     &mut received_buffer,
@@ -53,18 +86,21 @@ pub async fn run(ip: &str, port: &str) {
                 .await
                 {
                     Ok(message) => message,
-                    Err(err) => match err.kind() {
-                        ErrorKind::ConnectionAborted | ErrorKind::ConnectionReset => {
+                    Err(err) => match err {
+                        ServerError::ClientDisconnected => {
                             println!(
                                 "connection aborted on {}:{}",
                                 current_connection.ip, current_connection.port
                             );
                             break;
                         }
-                        _ => {
+                        ServerError::Other(err) => {
                             println!("{:?}", err);
                             // panic!("zoinks scoob something is broken");
                             panic!();
+                        }
+                        _ => {
+                            panic!("unknown error")
                         }
                     },
                 };
@@ -83,7 +119,7 @@ async fn handle_new_message(
     connection: &Connection,
     stream: &mut TcpStream,
 ) -> Result<(), ()> {
-    match message.message_type {
+    match &message.message_type {
         MessageType::RoomListRequest => {
             println!(
                 "client with id:{} ({}:{}) requested room list",
@@ -122,27 +158,74 @@ async fn handle_new_message(
                 }
             };
         }
-        MessageType::JoinRoomRequest => {
-            let request: request::JoinRoomRequest =
-                serde_json::from_str::<request::JoinRoomRequest>(message.text.as_str().trim())
-                    .unwrap();
+        MessageType::JoinRoomRequest(selected_room_id) => {
             println!(
                 "user with id:{} tries to join room with id:{}",
-                connection.id, request.room_id
+                connection.id, selected_room_id
             );
-            if room_with_id_exists(request.room_id) {
-                unsafe {
-                    let index = get_room_index(request.room_id);
-                    let room = &mut ROOM_LIST[index as usize];
-                    room.connections.push(connection.to_owned());
-                }
-            } else {
+            if !room_with_id_exists(selected_room_id.clone()) {
+                send_message(
+                    NetworkMessage::new(
+                        String::new(),
+                        MessageType::Error(NetworkError::CouldNotConnectToGivenRoom),
+                    ),
+                    stream,
+                )
+                .await;
+
                 panic!(
                     "client with id:{} tried to connect to non-existing room (id:{:?})",
-                    connection.id, request.room_id
+                    connection.id, selected_room_id
                 )
             }
+
+            if user_is_in_room(connection.id, selected_room_id.clone()) {
+                send_message(
+                    NetworkMessage::new(
+                        String::new(),
+                        MessageType::Error(NetworkError::UserIsAlreadyConnectedToRoom),
+                    ),
+                    stream,
+                )
+                .await;
+
+                panic!(
+                    "client with id:{} tried to connect to a room they're already connected to (id:{:?})",
+                    connection.id, selected_room_id
+                )
+            }
+
+            unsafe {
+                let index = get_room_index(selected_room_id.clone());
+                let room = &mut ROOM_LIST[index as usize];
+                room.connections.push(connection.to_owned());
+            }
+            send_message(
+                NetworkMessage::new(String::new(), MessageType::JoinRoomResponse),
+                stream,
+            )
+            .await;
         }
+        MessageType::SelectMove(move_type) => unsafe {
+            let found_room = ROOM_LIST
+                .iter()
+                .filter(|r| r.connections.contains(connection))
+                .collect::<Vec<&Room>>()[0];
+            let opponent_id = found_room
+                .players
+                .iter()
+                .filter(|p| p.player_id != connection.id)
+                .collect::<Vec<&RoomUser>>()[0]
+                .player_id;
+
+            MESSAGE_QUEUE.push(QueueMessage {
+                receiver_id: opponent_id,
+                message: NetworkMessage {
+                    text: "".to_string(),
+                    message_type: MessageType::OpponentMove(move_type.clone()),
+                },
+            })
+        },
         MessageType::Other => {
             if message.text == "hello there".to_string() {
                 send_message(
@@ -158,6 +241,22 @@ async fn handle_new_message(
     return Ok(());
 }
 
+fn user_is_in_room(user_id: i32, room_id: i32) -> bool {
+    let index = get_room_index(room_id);
+    if index == -1 {
+        return false;
+    }
+
+    let room: &Room;
+    unsafe {
+        room = &ROOM_LIST[index as usize];
+    }
+    if room.connections.iter().filter(|c| c.id == user_id).count() > 0 {
+        return true;
+    }
+    return false;
+}
+
 fn room_with_id_exists(id: i32) -> bool {
     unsafe {
         let filtered = ROOM_LIST
@@ -168,6 +267,7 @@ fn room_with_id_exists(id: i32) -> bool {
     }
 }
 
+#[doc = "returns found index or -1 if nothing has been found"]
 fn get_room_index(id: i32) -> i32 {
     unsafe {
         for i in 0..ROOM_LIST.len() {
@@ -179,18 +279,20 @@ fn get_room_index(id: i32) -> i32 {
     }
 }
 
-async fn create_new_room(host: &Connection) -> Result<(), ()> {
+async fn create_new_room(host: &Connection) -> Result<(), ServerError> {
     let room_id = host.id;
     if room_with_id_exists(room_id) {
         println!("room with id {room_id} already exists");
-        //TODO:
-        println!("error: user has already created a room");
-        return Err(());
+        return Err(ServerError::UserAlreadyCreatedARoom);
     }
     unsafe {
         ROOM_LIST.push(Room {
             connections: vec![host.to_owned()],
             room_id: host.id,
+            players: vec![RoomUser {
+                player_id: host.id,
+                selected_move: None,
+            }],
         });
     };
     return Ok(());
@@ -200,14 +302,27 @@ pub async fn wait_for_client_message(
     stream: &mut TcpStream,
     buffer: &mut Vec<u8>,
     _connection: &Connection,
-) -> Result<NetworkMessage, Error> {
+) -> Result<NetworkMessage, ServerError> {
     common::clear_buffer(buffer);
-    stream
-        .read(buffer)
-        .await
-        .expect("failed to read data from socket");
+    match stream.read(buffer).await {
+        Ok(_) => {}
+        Err(err) => match err.kind() {
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => {
+                return Err(ServerError::ClientDisconnected);
+            }
+            _ => {
+                return Err(ServerError::Other(err));
+            }
+        },
+    };
     let json = std::str::from_utf8(buffer).unwrap().replace('\0', "");
     let message = serde_json::from_str::<NetworkMessage>(json.as_str())
         .expect("error while trying to parse incoming data");
     return Ok(message);
+}
+
+pub enum ServerError {
+    UserAlreadyCreatedARoom,
+    ClientDisconnected,
+    Other(Error),
 }
