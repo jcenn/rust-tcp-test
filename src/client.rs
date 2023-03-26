@@ -3,15 +3,16 @@ use std::io::Stdin;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
-use crate::common::{self, clear_buffer, send_message, MoveType};
+use crate::common::{self, send_message, ClientState, MoveType};
 use crate::network_message::{MessageType, NetworkError, NetworkMessage};
 use crate::request;
 use crate::room::Room;
 
 static mut USER_ID: i32 = 0;
 static mut ROOM_LIST: Vec<Room> = vec![];
-static mut IS_CURRENTLY_IN_ROOM: bool = false;
+// static mut IS_CURRENTLY_IN_ROOM: bool = false;
 static mut SKIP_WAITING_FOR_SERVER: bool = false;
+static mut CURRENT_STATE: ClientState = ClientState::NotConnected;
 
 pub async fn run(ip: &str, port: &str) {
     let mut user_input_buf: String = String::new();
@@ -22,45 +23,46 @@ pub async fn run(ip: &str, port: &str) {
     }
     let mut read_buf: Vec<u8> = vec![0 as u8; 1024];
 
-    println!("press any key to connect with the server...");
+    println!("press enter to connect to the server...");
     let _ = stdin.read_line(&mut user_input_buf).unwrap();
     user_input_buf.clear();
 
     let mut stream: TcpStream = TcpStream::connect(format!("{}:{}", ip, port))
         .await
         .unwrap();
+    unsafe { CURRENT_STATE = ClientState::Connected };
 
     loop {
         //clears terminal
         //print!("{}[2J", 27 as char);
 
-        let should_skip: bool;
+        // let should_skip: bool;
+        // unsafe {
+        //     should_skip = SKIP_WAITING_FOR_SERVER;
+        // }
+        // if should_skip {
+        //     unsafe {
+        //         SKIP_WAITING_FOR_SERVER = false;
+        //     }
+        // } else {
+        let new_message: NetworkMessage = wait_for_server_message(&mut stream, &mut read_buf).await;
+        println!("new message: {:?}", new_message);
+        handle_incoming_message(&mut stream, &new_message).await;
+        // }
+
         unsafe {
-            should_skip = SKIP_WAITING_FOR_SERVER;
-        }
-        if should_skip {
-            unsafe {
-                SKIP_WAITING_FOR_SERVER = false;
+            match CURRENT_STATE {
+                ClientState::Connected => {
+                    ask_user_for_input(&mut stream, &stdin, &mut user_input_buf).await;
+                }
+                ClientState::Playing => {
+                    ask_user_for_game_input(&mut stream, &stdin, &mut user_input_buf).await;
+                }
+                _ => (),
             }
-        } else {
-            let new_message: NetworkMessage =
-                wait_for_server_message(&mut stream, &mut read_buf).await;
-            println!("new message: {:?}", new_message);
-            handle_incoming_message(&mut stream, &new_message).await;
         }
 
-        #[allow(unused_assignments)]
-        let mut is_in_room: bool = false;
-        unsafe {
-            is_in_room = IS_CURRENTLY_IN_ROOM;
-        }
-        if is_in_room {
-            ask_user_for_game_input(&mut stream, &stdin, &mut user_input_buf).await;
-        } else {
-            ask_user_for_input(&mut stream, &stdin, &mut user_input_buf).await;
-        }
-
-        user_input_buf = "".to_string();
+        user_input_buf.clear();
     }
 }
 
@@ -74,21 +76,21 @@ async fn handle_incoming_message(_stream: &mut TcpStream, message: &NetworkMessa
             unsafe {
                 ROOM_LIST = tmp_room_list.clone();
             }
-            println!(
-                "received room IDs: {:#?}",
-                tmp_room_list
-                    .iter()
-                    .map(|r| r.room_id)
-                    .collect::<Vec<i32>>()
-            );
+            println!("received rooms: {:#?}", tmp_room_list);
         }
         MessageType::CreateRoomResponse => {
             println!("successfully created a new room");
+            unsafe{
+                CURRENT_STATE = ClientState::InLobby;
+                println!("waiting for another user to join...")
+            }
         }
         MessageType::JoinRoomResponse => {
             println!("successfully joined selected room");
             unsafe {
-                IS_CURRENTLY_IN_ROOM = true;
+                CURRENT_STATE = ClientState::InLobby;
+                println!("waiting for another user to join...")
+
             }
         }
         MessageType::OpponentMove(move_type) => {

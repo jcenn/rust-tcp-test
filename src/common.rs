@@ -26,6 +26,7 @@ pub enum MoveType {
 }
 
 pub enum ClientState{
+    NotConnected,
     Connected,
     InLobby,
     Playing

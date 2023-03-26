@@ -63,20 +63,20 @@ pub async fn run(ip: &str, port: &str) {
                         .filter(|m| m.receiver_id == current_connection.id)
                         .collect::<Vec<&QueueMessage>>();
                     //TODO: es ist nicht working
-                    if messages.len() > 0 {
-                        send_message(messages[0].message.clone(), &mut stream).await;
-                        let mut found_message_index: i32 = -1;
-                        for i in 0..MESSAGE_QUEUE.len() {
-                            if MESSAGE_QUEUE[i] == messages[0].clone() {
-                                found_message_index = i as i32;
-                                break;
-                            }
-                        }
-                        if found_message_index == -1 {
-                            panic!("o no")
-                        }
-                        MESSAGE_QUEUE.remove(found_message_index as usize);
-                    }
+                    // if messages.len() > 0 {
+                    //     send_message(messages[0].message.clone(), &mut stream).await;
+                    //     let mut found_message_index: i32 = -1;
+                    //     for i in 0..MESSAGE_QUEUE.len() {
+                    //         if MESSAGE_QUEUE[i] == messages[0].clone() {
+                    //             found_message_index = i as i32;
+                    //             break;
+                    //         }
+                    //     }
+                    //     if found_message_index == -1 {
+                    //         panic!("o no")
+                    //     }
+                    //     MESSAGE_QUEUE.remove(found_message_index as usize);
+                    // }
                 }
                 let new_received = match wait_for_client_message(
                     &mut stream,
