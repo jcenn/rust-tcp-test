@@ -24,3 +24,9 @@ pub enum MoveType {
     Paper,
     Scissors,
 }
+
+pub enum ClientState{
+    Connected,
+    InLobby,
+    Playing
+}

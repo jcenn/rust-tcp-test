@@ -3,7 +3,7 @@ use std::io::Stdin;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
-use crate::common::{self, send_message, MoveType};
+use crate::common::{self, clear_buffer, send_message, MoveType};
 use crate::network_message::{MessageType, NetworkError, NetworkMessage};
 use crate::request;
 use crate::room::Room;
@@ -21,6 +21,10 @@ pub async fn run(ip: &str, port: &str) {
         SKIP_WAITING_FOR_SERVER = false;
     }
     let mut read_buf: Vec<u8> = vec![0 as u8; 1024];
+
+    println!("press any key to connect with the server...");
+    let _ = stdin.read_line(&mut user_input_buf).unwrap();
+    user_input_buf.clear();
 
     let mut stream: TcpStream = TcpStream::connect(format!("{}:{}", ip, port))
         .await
@@ -86,7 +90,7 @@ async fn handle_incoming_message(_stream: &mut TcpStream, message: &NetworkMessa
             unsafe {
                 IS_CURRENTLY_IN_ROOM = true;
             }
-        },
+        }
         MessageType::OpponentMove(move_type) => {
             println!("opponent used {:?}", move_type);
         }
@@ -242,21 +246,24 @@ async fn ask_user_for_game_input(
             send_message(
                 NetworkMessage::new("".to_string(), MessageType::SelectMove(MoveType::Rock)),
                 stream,
-            ).await;
+            )
+            .await;
         }
         2 => {
             println!("selected paper");
             send_message(
                 NetworkMessage::new("".to_string(), MessageType::SelectMove(MoveType::Paper)),
                 stream,
-            ).await;
+            )
+            .await;
         }
         3 => {
             println!("selected scissors");
             send_message(
                 NetworkMessage::new("".to_string(), MessageType::SelectMove(MoveType::Scissors)),
                 stream,
-            ).await;
+            )
+            .await;
         }
         _ => {
             println!("unknown command");

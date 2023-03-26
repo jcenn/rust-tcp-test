@@ -26,6 +26,8 @@ pub enum MessageType {
     RoomListResponse,
     CreateRoomRequest,
     CreateRoomResponse,
+    ClientListRequest,
+    ClientListResponse(Vec<i32>),
     SelectMove(MoveType),
     OpponentMove(MoveType),
     Error(NetworkError),
