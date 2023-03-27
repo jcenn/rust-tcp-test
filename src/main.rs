@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 use std::env;
 mod client;
 mod common;
@@ -7,7 +10,6 @@ mod response;
 mod server;
 mod connection;
 mod room;
-
 static IP_ADDRESS: &str = "127.0.0.1";
 static PORT: &str = "3333";
 

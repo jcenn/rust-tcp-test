@@ -25,9 +25,10 @@ pub enum MoveType {
     Scissors,
 }
 
+#[derive(Debug)]
 pub enum ClientState{
     NotConnected,
     Connected,
-    InLobby,
+    InRoom,
     Playing
 }

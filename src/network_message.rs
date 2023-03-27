@@ -1,6 +1,6 @@
 use serde_derive::{Deserialize, Serialize};
 
-use crate::common::MoveType;
+use crate::{common::MoveType, room::Room};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct NetworkMessage {
@@ -21,13 +21,14 @@ impl NetworkMessage {
 pub enum MessageType {
     UserConnectedResponse(UserJoinedResponseDto),
     JoinRoomRequest(i32),
-    JoinRoomResponse,
+    JoinRoomResponse(Room),
     RoomListRequest,
     RoomListResponse,
     CreateRoomRequest,
     CreateRoomResponse,
     ClientListRequest,
     ClientListResponse(Vec<i32>),
+    RoomUpdate(Room),
     SelectMove(MoveType),
     OpponentMove(MoveType),
     Error(NetworkError),
@@ -44,4 +45,5 @@ pub enum NetworkError {
     RoomWithIdAlreadyExists,
     UserIsAlreadyConnectedToRoom,
     CouldNotConnectToGivenRoom,
+    RoomIsFull
 }

@@ -1,10 +1,11 @@
 use std::net::IpAddr;
 
 use serde_derive::{Deserialize, Serialize};
+use tokio::net::TcpStream;
 
 static mut LAST_ID: i32 = 0;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Connection {
     pub ip: IpAddr,
     pub port: u16,

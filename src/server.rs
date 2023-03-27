@@ -1,27 +1,41 @@
+use std::io;
+use std::task::Poll;
+use std::time::Duration;
 use std::{io::Error, io::ErrorKind};
 
+// use std::collections::HashMap;
+
+use tokio::io::{Interest, ReadBuf, AsyncWriteExt};
+use tokio::macros::support::poll_fn;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
 };
 
-use crate::network_message::{MessageType, NetworkMessage, UserJoinedResponseDto};
 use crate::room::Room;
 use crate::{
     common::{self, send_message},
     room::RoomUser,
 };
 use crate::{connection::Connection, network_message::NetworkError};
+use crate::{
+    network_message::{MessageType, NetworkMessage, UserJoinedResponseDto},
+    room::RoomState,
+};
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 struct QueueMessage {
     receiver_id: i32,
     message: NetworkMessage,
 }
 
 static mut ROOM_LIST: Vec<Room> = vec![];
-static mut MESSAGE_QUEUE: Vec<QueueMessage> = vec![];
-
+// static mut MESSAGE_QUEUE: Vec<QueueMessage> = vec![];
+lazy_static! {
+    static ref MESSAGE_QUEUE: Mutex<Vec<QueueMessage>> = Mutex::new(Vec::new());
+}
 pub async fn run(ip: &str, port: &str) {
     //for testing
     // unsafe {
@@ -39,6 +53,7 @@ pub async fn run(ip: &str, port: &str) {
         let (mut stream, addr) = listener.accept().await.unwrap();
         let new_connection: Connection = Connection::new(addr.ip(), addr.port());
         println!("new connection from {}", new_connection.ip);
+
         send_message(
             NetworkMessage::new(
                 format!("your id: {}", new_connection.id),
@@ -57,61 +72,97 @@ pub async fn run(ip: &str, port: &str) {
 
             // In a loop, read data from the socket and write the data back.
             loop {
-                unsafe {
-                    let messages = MESSAGE_QUEUE
-                        .iter()
-                        .filter(|m| m.receiver_id == current_connection.id)
-                        .collect::<Vec<&QueueMessage>>();
-                    //TODO: es ist nicht working
-                    // if messages.len() > 0 {
-                    //     send_message(messages[0].message.clone(), &mut stream).await;
-                    //     let mut found_message_index: i32 = -1;
-                    //     for i in 0..MESSAGE_QUEUE.len() {
-                    //         if MESSAGE_QUEUE[i] == messages[0].clone() {
-                    //             found_message_index = i as i32;
-                    //             break;
-                    //         }
-                    //     }
-                    //     if found_message_index == -1 {
-                    //         panic!("o no")
-                    //     }
-                    //     MESSAGE_QUEUE.remove(found_message_index as usize);
-                    // }
-                }
-                let new_received = match wait_for_client_message(
-                    &mut stream,
-                    &mut received_buffer,
-                    &current_connection,
-                )
-                .await
-                {
-                    Ok(message) => message,
-                    Err(err) => match err {
-                        ServerError::ClientDisconnected => {
-                            println!(
-                                "connection aborted on {}:{}",
-                                current_connection.ip, current_connection.port
-                            );
-                            break;
-                        }
-                        ServerError::Other(err) => {
-                            println!("{:?}", err);
-                            // panic!("zoinks scoob something is broken");
-                            panic!();
-                        }
-                        _ => {
-                            panic!("unknown error")
-                        }
-                    },
-                };
-                println!("new message: {:?}", new_received);
+                check_message_queue(current_connection.id, &mut stream).await;
+                let mut is_stream_ready: bool = false;
+                //if there's a message incoming, read it
+                //otherwise, wait a bit and check if there's a message in the queue
+                poll_fn(|cx| {
+                    let poll = stream.poll_read_ready(cx);
+                    println!("poll: {:?}", poll);
+                    match poll {
+                        Poll::Ready(_) => is_stream_ready = true,
+                        Poll::Pending => is_stream_ready = false,
+                    }
+                    return Poll::Ready(());
+                })
+                .await;
+                println!("x: {is_stream_ready}");
 
-                handle_new_message(&new_received, &current_connection, &mut stream)
+                if is_stream_ready {
+                    println!("checking stream buffer...");
+                    let mut tmp_buf = [0 as u8; 32];
+                    poll_fn(|cx| {
+                        let poll = stream.poll_peek(cx, &mut ReadBuf::new(&mut tmp_buf));
+                        match poll {
+                            Poll::Ready(n) => {
+                                is_stream_ready = true;
+                                println!("bytes: {:?}", n.unwrap());
+                                println!("buffer: {:?}", std::str::from_utf8(&tmp_buf));
+                            }
+
+                            Poll::Pending => is_stream_ready = false,
+                        }
+                        return Poll::Ready(());
+                    })
+                    .await;
+                }
+
+                if is_stream_ready {
+                    let new_received = match wait_for_client_message(
+                        &mut stream,
+                        &mut received_buffer,
+                        &current_connection,
+                    )
                     .await
-                    .unwrap();
+                    {
+                        Ok(message) => message,
+                        Err(err) => match err {
+                            ServerError::ClientDisconnected => {
+                                println!(
+                                    "connection aborted on {}:{}",
+                                    current_connection.ip, current_connection.port
+                                );
+                                break;
+                            }
+                            ServerError::Other(err) => {
+                                println!("{:?}", err);
+                                // panic!("zoinks scoob something is broken");
+                                panic!();
+                            }
+                            _ => {
+                                panic!("unknown error")
+                            }
+                        },
+                    };
+
+                    // Logs every message
+                    println!("new message: {:?}", new_received);
+
+                    handle_new_message(&new_received, &current_connection, &mut stream)
+                        .await
+                        .unwrap()
+                } else {
+                    stream.flush().await.unwrap();
+                    sleep(Duration::from_millis(2000)).await;
+                }
             }
         });
     }
+}
+
+async fn check_message_queue(connection_id: i32, stream: &mut TcpStream) {
+    println!("checking queue... for id:{connection_id}");
+
+    let mut queue = MESSAGE_QUEUE.lock().await;
+    for i in 0..queue.len() {
+        if queue[i].receiver_id == connection_id {
+            send_message(queue[i].message.to_owned(), stream).await;
+            queue.remove(i);
+            println!("sent a message for user with id:{connection_id}");
+            break;
+        }
+    }
+    println!("{:#?}", queue);
 }
 
 async fn handle_new_message(
@@ -138,13 +189,16 @@ async fn handle_new_message(
         }
         MessageType::CreateRoomRequest => {
             match create_new_room(&connection).await {
-                Ok(_) => {
+                Ok(new_room_id) => {
                     send_message(
                         NetworkMessage::new("".to_string(), MessageType::CreateRoomResponse),
                         stream,
                     )
                     .await;
-                    println!("user with id:{} created a new room", connection.id);
+                    println!(
+                        "user with id:{} created and joined a room with id:{}",
+                        connection.id, new_room_id
+                    );
                 }
                 Err(_) => {
                     send_message(
@@ -198,13 +252,39 @@ async fn handle_new_message(
             unsafe {
                 let index = get_room_index(selected_room_id.clone());
                 let room = &mut ROOM_LIST[index as usize];
-                room.connections.push(connection.to_owned());
+
+                if room.connections.len() >= 2 {
+                    panic!("room is full");
+                } else {
+                    room.connections.push(connection.to_owned());
+                    room.state = RoomState::WaitingForStart;
+                }
+                send_message(
+                    NetworkMessage::new(String::new(), MessageType::JoinRoomResponse(room.clone())),
+                    stream,
+                )
+                .await;
+
+                let mut queue = MESSAGE_QUEUE.lock().await;
+
+                queue.push(QueueMessage {
+                    receiver_id: room
+                        .players
+                        .iter()
+                        .filter(|player| player.player_id != connection.id)
+                        .collect::<Vec<&RoomUser>>()[0]
+                        .player_id,
+                    message: NetworkMessage {
+                        text: "".to_string(),
+                        message_type: MessageType::RoomUpdate(room.clone()),
+                    },
+                });
+                // println!("queue: {:#?}", queue);
             }
-            send_message(
-                NetworkMessage::new(String::new(), MessageType::JoinRoomResponse),
-                stream,
+            println!(
+                "client with id:{} joined room with id:{}",
+                connection.id, selected_room_id
             )
-            .await;
         }
         MessageType::SelectMove(move_type) => unsafe {
             let found_room = ROOM_LIST
@@ -218,13 +298,13 @@ async fn handle_new_message(
                 .collect::<Vec<&RoomUser>>()[0]
                 .player_id;
 
-            MESSAGE_QUEUE.push(QueueMessage {
-                receiver_id: opponent_id,
-                message: NetworkMessage {
-                    text: "".to_string(),
-                    message_type: MessageType::OpponentMove(move_type.clone()),
-                },
-            })
+            // MESSAGE_QUEUE.push(QueueMessage {
+            //     receiver_id: opponent_id,
+            //     message: NetworkMessage {
+            //         text: "".to_string(),
+            //         message_type: MessageType::OpponentMove(move_type.clone()),
+            //     },
+            // })
         },
         MessageType::Other => {
             if message.text == "hello there".to_string() {
@@ -279,7 +359,7 @@ fn get_room_index(id: i32) -> i32 {
     }
 }
 
-async fn create_new_room(host: &Connection) -> Result<(), ServerError> {
+async fn create_new_room(host: &Connection) -> Result<i32, ServerError> {
     let room_id = host.id;
     if room_with_id_exists(room_id) {
         println!("room with id {room_id} already exists");
@@ -293,9 +373,10 @@ async fn create_new_room(host: &Connection) -> Result<(), ServerError> {
                 player_id: host.id,
                 selected_move: None,
             }],
+            state: RoomState::WaitingForUsers,
         });
     };
-    return Ok(());
+    return Ok(room_id);
 }
 
 pub async fn wait_for_client_message(

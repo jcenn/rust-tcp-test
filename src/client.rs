@@ -11,16 +11,16 @@ use crate::room::Room;
 static mut USER_ID: i32 = 0;
 static mut ROOM_LIST: Vec<Room> = vec![];
 // static mut IS_CURRENTLY_IN_ROOM: bool = false;
-static mut SKIP_WAITING_FOR_SERVER: bool = false;
+// static mut SKIP_WAITING_FOR_SERVER: bool = false;
 static mut CURRENT_STATE: ClientState = ClientState::NotConnected;
 
 pub async fn run(ip: &str, port: &str) {
     let mut user_input_buf: String = String::new();
     let stdin = std::io::stdin();
 
-    unsafe {
-        SKIP_WAITING_FOR_SERVER = false;
-    }
+    // unsafe {
+    //     SKIP_WAITING_FOR_SERVER = false;
+    // }
     let mut read_buf: Vec<u8> = vec![0 as u8; 1024];
 
     println!("press enter to connect to the server...");
@@ -46,10 +46,14 @@ pub async fn run(ip: &str, port: &str) {
         //     }
         // } else {
         let new_message: NetworkMessage = wait_for_server_message(&mut stream, &mut read_buf).await;
-        println!("new message: {:?}", new_message);
+
+        // Logs every message
+        println!("new message: {:#?}", new_message);
+
         handle_incoming_message(&mut stream, &new_message).await;
         // }
-
+        unsafe { println!("current state: {:?}", CURRENT_STATE) }
+        
         unsafe {
             match CURRENT_STATE {
                 ClientState::Connected => {
@@ -80,17 +84,24 @@ async fn handle_incoming_message(_stream: &mut TcpStream, message: &NetworkMessa
         }
         MessageType::CreateRoomResponse => {
             println!("successfully created a new room");
-            unsafe{
-                CURRENT_STATE = ClientState::InLobby;
+            unsafe {
+                CURRENT_STATE = ClientState::InRoom;
                 println!("waiting for another user to join...")
             }
         }
-        MessageType::JoinRoomResponse => {
+        MessageType::JoinRoomResponse(room) => {
             println!("successfully joined selected room");
             unsafe {
-                CURRENT_STATE = ClientState::InLobby;
-                println!("waiting for another user to join...")
-
+                CURRENT_STATE = ClientState::InRoom;
+            }
+            match room.state {
+                crate::room::RoomState::WaitingForUsers => {
+                    println!("waiting for another user to join...")
+                }
+                crate::room::RoomState::WaitingForStart => {
+                    println!("waiting for another user to join...")
+                }
+                crate::room::RoomState::Playing => todo!(),
             }
         }
         MessageType::OpponentMove(move_type) => {
@@ -108,6 +119,13 @@ async fn handle_incoming_message(_stream: &mut TcpStream, message: &NetworkMessa
         MessageType::Other => {
             println!("other message: {:#?}", message.text);
         }
+        MessageType::RoomUpdate(room) => match room.state {
+            crate::room::RoomState::WaitingForUsers => todo!(),
+            crate::room::RoomState::WaitingForStart => {
+                println!("waiting for game to start...")
+            }
+            crate::room::RoomState::Playing => todo!(),
+        },
         _ => (),
     };
 }
@@ -152,7 +170,7 @@ async fn join_room(stream: &mut TcpStream) -> Result<(), String> {
         let received_message = wait_for_server_message(stream, &mut tmp_buffer).await;
         unsafe {
             ROOM_LIST = serde_json::from_str::<Vec<Room>>(&received_message.text.as_str()).unwrap();
-            SKIP_WAITING_FOR_SERVER = true;
+            // SKIP_WAITING_FOR_SERVER = true;
         }
     }
 
@@ -216,17 +234,17 @@ async fn ask_user_for_input(stream: &mut TcpStream, stdin: &Stdin, user_input_bu
                 Err(err) => {
                     println!("error: {:#?}", err);
                     //TODO: test if it works
-                    unsafe {
-                        SKIP_WAITING_FOR_SERVER = true;
-                    }
+                    // unsafe {
+                    //     SKIP_WAITING_FOR_SERVER = true;
+                    // }
                 }
             };
         }
         _ => {
             println!("unknown command");
-            unsafe {
-                SKIP_WAITING_FOR_SERVER = true;
-            }
+            // unsafe {
+            //     SKIP_WAITING_FOR_SERVER = true;
+            // }
         }
     }
 }
@@ -269,9 +287,9 @@ async fn ask_user_for_game_input(
         }
         _ => {
             println!("unknown command");
-            unsafe {
-                SKIP_WAITING_FOR_SERVER = true;
-            }
+            // unsafe {
+            //     SKIP_WAITING_FOR_SERVER = true;
+            // }
         }
     }
 }
