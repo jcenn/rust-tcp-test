@@ -1,5 +1,5 @@
 # rust-tcp-test
-## over-the-network tic-tac-toe app using the TCP protocol written in rust
+## network tic-tac-toe app that utilizes the TCP protocol
 
 <!-- ### made mainly to learn rust -->
 
